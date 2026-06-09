@@ -71,10 +71,16 @@ function Landing() {
               Model every VC round, SAFE, board seat, and liquidation preference — in minutes. No login required.
             </p>
             <div className="mt-10 flex flex-wrap gap-3">
-              <Link to="/simulator">
+              <Link to="/decode">
                 <button className="flex items-center gap-2 text-base font-semibold px-7 py-3.5 rounded-full transition-all shadow-lg"
                   style={{ background: "oklch(0.76 0.15 285)", color: "oklch(0.22 0.04 265)" }}>
-                  Try it free <ArrowRight className="h-4 w-4" />
+                  Got a term sheet? Decode it <ArrowRight className="h-4 w-4" />
+                </button>
+              </Link>
+              <Link to="/simulator">
+                <button className="flex items-center gap-2 text-base font-semibold px-7 py-3.5 rounded-full transition-all"
+                  style={{ background: "rgba(255,255,255,0.1)", color: "white", border: "1.5px solid rgba(255,255,255,0.2)" }}>
+                  Explore the simulator
                 </button>
               </Link>
               <a href="https://github.com/EquiCompass/founders-equity-compass" target="_blank" rel="noopener noreferrer">

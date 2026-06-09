@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SimulatorRouteImport } from './routes/simulator'
+import { Route as DecodeRouteImport } from './routes/decode'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
@@ -21,6 +22,11 @@ import { Route as ScenariosIdRouteImport } from './routes/scenarios.$id'
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecodeRoute = DecodeRouteImport.update({
+  id: '/decode',
+  path: '/decode',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SimulatorRoute = SimulatorRouteImport.update({
@@ -62,6 +68,7 @@ const ScenariosIdRoute = ScenariosIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/decode': typeof DecodeRoute
   '/privacy': typeof PrivacyRoute
   '/simulator': typeof SimulatorRoute
   '/terms': typeof TermsRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/decode': typeof DecodeRoute
   '/privacy': typeof PrivacyRoute
   '/simulator': typeof SimulatorRoute
   '/terms': typeof TermsRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/decode': typeof DecodeRoute
   '/privacy': typeof PrivacyRoute
   '/simulator': typeof SimulatorRoute
   '/terms': typeof TermsRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/decode'
     | '/privacy'
     | '/simulator'
     | '/terms'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/decode'
     | '/privacy'
     | '/simulator'
     | '/terms'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/auth'
+    | '/decode'
     | '/privacy'
     | '/simulator'
     | '/terms'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  DecodeRoute: typeof DecodeRoute
   PrivacyRoute: typeof PrivacyRoute
   SimulatorRoute: typeof SimulatorRoute
   TermsRoute: typeof TermsRoute
@@ -141,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decode': {
+      id: '/decode'
+      path: '/decode'
+      fullPath: '/decode'
+      preLoaderRoute: typeof DecodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/simulator': {
@@ -198,6 +218,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  DecodeRoute: DecodeRoute,
   PrivacyRoute: PrivacyRoute,
   SimulatorRoute: SimulatorRoute,
   TermsRoute: TermsRoute,

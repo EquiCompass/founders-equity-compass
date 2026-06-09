@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { EquiCompassLogo } from "@/components/EquiCompassLogo";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Simulator } from "@/components/Simulator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ExportButton } from "@/components/ExportButton";
+import { DECODED_STATE_KEY } from "@/components/TermSheetDecoder";
 import { DEFAULT_STATE, type SimulatorState } from "@/lib/equity/types";
 import { Link } from "@tanstack/react-router";
 
@@ -16,6 +17,20 @@ export const Route = createFileRoute("/simulator")({
 
 function SimulatorPage() {
   const [state, setState] = useState<SimulatorState>(DEFAULT_STATE);
+
+  // Pick up a deal handed over from the term-sheet decoder (/decode).
+  // Done in an effect (not the useState initializer) to stay SSR/hydration-safe.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(DECODED_STATE_KEY);
+      if (raw) {
+        sessionStorage.removeItem(DECODED_STATE_KEY);
+        setState({ ...DEFAULT_STATE, ...(JSON.parse(raw) as SimulatorState) });
+      }
+    } catch {
+      /* corrupt or unavailable storage — keep defaults */
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
