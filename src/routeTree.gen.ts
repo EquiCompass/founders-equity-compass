@@ -11,8 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SimulatorRouteImport } from './routes/simulator'
-import { Route as DecodeRouteImport } from './routes/decode'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as DecodeRouteImport } from './routes/decode'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ScenariosIndexRouteImport } from './routes/scenarios.index'
@@ -24,11 +24,6 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DecodeRoute = DecodeRouteImport.update({
-  id: '/decode',
-  path: '/decode',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SimulatorRoute = SimulatorRouteImport.update({
   id: '/simulator',
   path: '/simulator',
@@ -37,6 +32,11 @@ const SimulatorRoute = SimulatorRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecodeRoute = DecodeRouteImport.update({
+  id: '/decode',
+  path: '/decode',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -156,13 +156,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/decode': {
-      id: '/decode'
-      path: '/decode'
-      fullPath: '/decode'
-      preLoaderRoute: typeof DecodeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/simulator': {
       id: '/simulator'
       path: '/simulator'
@@ -175,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decode': {
+      id: '/decode'
+      path: '/decode'
+      fullPath: '/decode'
+      preLoaderRoute: typeof DecodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
