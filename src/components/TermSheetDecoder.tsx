@@ -23,6 +23,7 @@ export const DECODED_STATE_KEY = "equicompass.decoded";
 
 type PrefChoice = "1x-non" | "1x-part" | "2x-non" | "2x-part" | "unsure";
 type AdChoice = "none" | "bbwa" | "ratchet" | "unsure";
+type Leverage = "competing" | "normal" | "tight";
 
 interface Answers {
   mkt: Market;
@@ -119,6 +120,26 @@ function QHeader({ n, title, hint }: { n: number; title: string; hint: string })
   );
 }
 
+/* ───────────────────────── advice model ───────────────────────── */
+
+type Concede = "high" | "medium" | "low";
+const CONCEDE_LABEL: Record<Concede, string> = {
+  high: "VCs usually concede this",
+  medium: "Often negotiable",
+  low: "Rarely moves without competition",
+};
+
+interface Flag {
+  tier: "blocker" | "ask" | "confirm";
+  cost?: number;
+  concede: Concede;
+  title: string;
+  body: string;
+  ask: string;
+}
+
+interface AcceptItem { title: string; note: string }
+
 /* ───────────────────────── component ───────────────────────── */
 
 export function TermSheetDecoder() {
@@ -127,6 +148,8 @@ export function TermSheetDecoder() {
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
   const [exitVal, setExitVal] = useState(50);
+  const [leverage, setLeverage] = useState<Leverage>("normal");
+  const [showFull, setShowFull] = useState(false);
   const set = <K extends keyof Answers>(k: K, v: Answers[K]) => setA((p) => ({ ...p, [k]: v }));
 
   const capOk = a.fdr + a.esopNow <= 100 && a.you <= a.fdr && a.fdr > 0;
@@ -162,98 +185,170 @@ export function TermSheetDecoder() {
   const youBase = payouts["Founder 1"] ?? 0;
   const vcSeats = snap.vcSeats;
 
-  interface Flag { sev: "high" | "med"; cost?: number; title: string; body: string; ask: string }
-  const flags: Flag[] = [];
-  if (part) {
-    flags.push({
-      sev: "high",
-      cost: youUnder({ pref: mult === 2 ? "2x-non" : "1x-non" }) - youBase,
-      title: 'Remove "participating" from the liquidation preference',
-      body: `At a ${fmtM(exitVal)} exit, participating preferred costs you personally the amount shown vs. standard non-participating.`,
-      ask: a.mkt === "india"
-        ? '"Preference shares shall be non-participating. Investors elect preference OR pro-rata — not both." Non-participating is the India market standard at every stage.'
-        : "NVCA model documents default to non-participating — ask them to conform.",
-    });
-  }
-  if (mult > 1) {
-    flags.push({
-      sev: "high",
-      cost: youUnder({ pref: part ? "1x-part" : "1x-non" }) - youBase,
-      title: `Cut the ${mult}x multiple to 1x`,
-      body: `A ${mult}x preference means ${fmtM(a.inv * mult)} comes off the top before common sees anything.`,
-      ask: "1x is standard in every market. Anything above 1x is a price negotiation in disguise — counter on valuation instead.",
-    });
-  }
+  /* ── build flags in three tiers ── */
+  const blockers: Flag[] = [];
+  const allAsks: Flag[] = [];
+  const confirms: Flag[] = [];
+  const accepts: AcceptItem[] = [];
+
   if (a.ad === "ratchet") {
     const downPre = (a.pre + a.inv) * 0.6;
     const boosted = vcPct * ((a.pre + a.inv) / downPre);
-    flags.push({
-      sev: "high",
-      title: "Replace full ratchet with broad-based weighted average",
-      body: `If your next round prices 40% lower, full ratchet boosts this investor from ${vcPct.toFixed(1)}% to ~${boosted.toFixed(1)}% — entirely at your expense.`,
-      ask: 'Ask for "broad-based weighted average" — the market standard everywhere. Full ratchet is not standard in any geography.',
+    blockers.push({
+      tier: "blocker", concede: "high",
+      title: "Full ratchet anti-dilution — fix before signing",
+      body: `If your next round prices 40% lower, this investor jumps from ${vcPct.toFixed(1)}% to ~${boosted.toFixed(1)}% at your expense. No serious VC defends full ratchet when challenged — it's not market standard anywhere.`,
+      ask: 'Ask to replace with "broad-based weighted average" — the standard in both India and the US. This is a 5-minute redline, not a fight.',
+    });
+  } else if (a.ad === "bbwa") {
+    accepts.push({ title: "Broad-based weighted average anti-dilution", note: "Market standard. Don't spend a chip here." });
+  } else if (a.ad === "none") {
+    accepts.push({ title: "No anti-dilution protection", note: "Rare and founder-friendly. Say nothing." });
+  }
+
+  if (mult > 1) {
+    blockers.push({
+      tier: "blocker", concede: "high",
+      cost: youUnder({ pref: part ? "1x-part" : "1x-non" }) - youBase,
+      title: `${mult}x preference multiple — fix before signing`,
+      body: `${fmtM(a.inv * mult)} comes off the top before common sees anything. Above-1x multiples are a price negotiation in disguise.`,
+      ask: "Ask for 1x — universal standard. If they want more downside protection, the honest conversation is valuation, not multiple.",
     });
   }
-  if (a.redemption) {
-    flags.push({
-      sev: "high",
-      cost: undefined,
-      title: "Strike redemption rights",
-      body: `A ${fmtM(a.inv)}+ cash liability the investor can trigger in ~5 years, potentially forcing a sale on their timeline.`,
+
+  if (part) {
+    allAsks.push({
+      tier: "ask", concede: "high",
+      cost: youUnder({ pref: mult === 2 ? "2x-non" : "1x-non" }) - youBase,
+      title: 'Ask to remove "participating"',
+      body: `At a ${fmtM(exitVal)} exit this costs you personally the amount shown. Non-participating is the market norm at every stage in both markets.`,
       ask: a.mkt === "india"
-        ? "Cite Companies Act §68 — buybacks require distributable profits. Counter: 1x cap, trigger after year 7 only, 3-year installments."
-        : "NVCA model documents (post-2015) omit redemption entirely — most US VCs drop it when pushed.",
+        ? 'Proposed language: "Investors elect preference OR pro-rata — not both." Frame it as conforming to India market standard, not as a concession.'
+        : "Frame it as conforming to the NVCA model documents — most US funds accept without argument.",
     });
+  } else if (mult === 1 && a.pref !== "unsure") {
+    accepts.push({ title: "1x non-participating preference", note: "Exactly what you want. Accept as drafted." });
   }
-  if (a.esopT >= 15) {
-    flags.push({
-      sev: "med",
-      title: `Negotiate the ESOP top-up below ${a.esopT}%`,
-      body: "The pool is created pre-money, so the entire top-up comes out of existing holders — not the investor.",
-      ask: "Counter with a bottoms-up 18-month hiring plan; 10–12% is usually defensible.",
+
+  if (a.redemption) {
+    allAsks.push({
+      tier: "ask", concede: a.mkt === "us" ? "high" : "medium",
+      title: "Ask to soften or remove redemption rights",
+      body: `A ${fmtM(a.inv)}+ potential cash liability after ~5 years. ${a.mkt === "us" ? "Post-2015 NVCA documents omit redemption — most US VCs drop it when asked." : "Indian funds keep it for DPI optics but rarely enforce; most will cap and defer it."}`,
+      ask: a.mkt === "india"
+        ? "If they won't strike it: 1x cap (no premium), trigger only after year 7, payable in installments. Companies Act §68 limits enforcement anyway — use that, gently."
+        : "Ask for removal citing NVCA. Fall-back: 1x cap, year-7 trigger, 75% preferred approval.",
     });
+  } else {
+    accepts.push({ title: "No redemption rights", note: "Good. Nothing to do." });
   }
+
   if (a.board === "2") {
-    flags.push({
-      sev: "high",
-      title: "Refuse the second board seat",
+    allAsks.push({
+      tier: "ask", concede: "medium",
+      title: "Ask to convert the second board seat to an observer",
       body: "Two investor seats after one round means investor + independent can outvote founders.",
-      ask: "One seat for the lead is standard. Offer an observer seat for the co-investor instead.",
+      ask: "One seat for the lead is standard; offer the co-investor an observer seat. Reasonable funds accept this often — but a lead set on two seats rarely moves.",
     });
+  } else if (a.board === "1") {
+    accepts.push({ title: "One investor board seat", note: "Standard for a priced-round lead. Accept it — fighting this reads as naive." });
+  } else if (a.board === "observer") {
+    accepts.push({ title: "Observer seat only", note: "Founder-friendly. Accept." });
   }
+
+  if (a.esopT >= 15) {
+    allAsks.push({
+      tier: "ask", concede: "medium",
+      title: `Ask to size the ESOP top-up below ${a.esopT}%`,
+      body: "The pool is created pre-money, so the entire top-up dilutes existing holders — not the investor.",
+      ask: "Counter with a bottoms-up 18-month hiring plan. 10–12% is usually defensible. VCs concede when shown a real plan; they hold firm against naked pushback.",
+    });
+  } else if (a.esopT > 0) {
+    accepts.push({ title: `ESOP top-up of ${a.esopT}%`, note: "Within market norms. Accept." });
+  }
+
   if (vcPct > bench.hi) {
-    flags.push({
-      sev: "med",
-      title: `Dilution is above market (${vcPct.toFixed(1)}% vs ${bench.lo}–${bench.hi}% typical)`,
+    allAsks.push({
+      tier: "ask", concede: leverage === "competing" ? "medium" : "low",
+      title: `Dilution above market (${vcPct.toFixed(1)}% vs ${bench.lo}–${bench.hi}% typical)`,
       body: ROUND_BENCHMARK_NOTES[a.mkt][a.round],
-      ask: `Counter on valuation: at ${fmtM(a.inv)} raised, a pre-money of ${fmtM((a.inv * 100) / bench.hi - a.inv)} brings them to ${bench.hi}% — the top of the market range.`,
+      ask: leverage === "competing"
+        ? `You have competing offers — this is exactly when price moves. A pre-money of ${fmtM((a.inv * 100) / bench.hi - a.inv)} brings them to ${bench.hi}%.`
+        : "Price rarely moves without a competing offer. If this is your only term sheet, take the structural wins above and let the price stand.",
     });
+  } else {
+    accepts.push({ title: `Dilution of ${vcPct.toFixed(1)}%`, note: `Within the ${bench.lo}–${bench.hi}% market range for ${ROUND_LABELS[a.round]}. Fair.` });
   }
+
   if (a.pref === "unsure") {
-    flags.push({ sev: "med", title: "Confirm the liquidation preference wording with your lawyer", body: "We assumed 1x non-participating. If it says \"participating\", the numbers above are optimistic.", ask: "" });
+    confirms.push({ tier: "confirm", concede: "high", title: "Confirm the liquidation preference wording with your lawyer", body: 'We assumed 1x non-participating. If it says "participating", re-run this with that answer.', ask: "" });
   }
   if (a.ad === "unsure") {
-    flags.push({ sev: "med", title: "Confirm the anti-dilution clause", body: "We assumed broad-based weighted average. If it says \"full ratchet\", treat it as a deal-breaker.", ask: "" });
+    confirms.push({ tier: "confirm", concede: "high", title: "Confirm the anti-dilution clause", body: 'We assumed broad-based weighted average. If it says "full ratchet", treat it as a deal-breaker.', ask: "" });
   }
-  const highs = flags.filter((f) => f.sev === "high").length;
 
+  /* ── leverage-aware ask budget: spend chips on the best battles only ── */
+  const askBudget = leverage === "competing" ? 3 : leverage === "tight" ? 1 : 2;
+  const concedeRank: Record<Concede, number> = { high: 0, medium: 1, low: 2 };
+  const sortedAsks = [...allAsks].sort((x, y) => {
+    const cx = x.cost ?? 0, cy = y.cost ?? 0;
+    if (Math.abs(cy - cx) > 0.01) return cy - cx;
+    return concedeRank[x.concede] - concedeRank[y.concede];
+  });
+  const asks = sortedAsks.slice(0, askBudget);
+  const parked = sortedAsks.slice(askBudget);
+
+  /* ── verdict ── */
+  const verdict = blockers.length > 0
+    ? {
+        cls: "border-danger bg-danger/10",
+        head: `Fix ${blockers.length === 1 ? "one deal-breaker" : `${blockers.length} deal-breakers`} — the rest of this deal can stand.`,
+        body: leverage === "tight"
+          ? "Even with short runway, these specific clauses cost more later than a quick redline costs now. VCs concede them when challenged — this is a fast fix, not a stand-off."
+          : "These aren't negotiating positions; they're off-market terms no serious investor defends. Ask once, in writing, citing the market standard.",
+      }
+    : asks.length > 0
+      ? {
+          cls: "border-warning bg-warning/10",
+          head: leverage === "competing"
+            ? `Sign-able — and you have the leverage to win ${asks.length === 1 ? "your ask" : `all ${asks.length} asks`}.`
+            : leverage === "tight"
+              ? "Sign-able. Spend your one ask wisely, then close."
+              : `Sign-able after ${asks.length === 1 ? "one quick ask" : `${asks.length} quick asks`}.`,
+          body: leverage === "tight"
+            ? "With limited runway, a closed round beats a perfect round. Make the single ask below once; if they decline, sign anyway."
+            : "The structure is workable. Make the asks below in one short, friendly email — not a list of demands — and accept the rest as drafted.",
+        }
+      : {
+          cls: "border-success bg-success/10",
+          head: "This is a clean, market-standard term sheet.",
+          body: "Don't manufacture a negotiation. Confirm the details with your lawyer and sign while the offer is warm.",
+        };
+
+  /* ── collaborative memo ── */
   const memo = useMemo(() => {
-    const items = flags
-      .map((f, i) => `${i + 1}. ${f.title}${f.cost !== undefined && f.cost > 0.005 ? ` (worth ${fmtM(f.cost)} to you at a ${fmtM(exitVal)} exit)` : ""}`)
-      .join("\n");
-    return `TERM SHEET RESPONSE — ${ROUND_LABELS[a.round].toUpperCase()} (${fmtM(a.inv)} on ${fmtM(a.pre)} pre-money)
+    const blockerLines = blockers.map((f) => `  • ${f.title.replace(" — fix before signing", "")}: ${f.ask.split(".")[0]}.`).join("\n");
+    const askLines = asks.map((f) => `  • ${f.title.replace(/^Ask to /, "").replace(/^./, (c) => c.toUpperCase())}${f.cost && f.cost > 0.005 ? ` (worth ${fmtM(f.cost)} to the founding team at a ${fmtM(exitVal)} exit)` : ""}`).join("\n");
+    return `DRAFT EMAIL TO YOUR LEAD INVESTOR
+─────────────────────────────────
 
-POSITION: We are excited to move forward. We accept the valuation and
-investment amount. Before signing we need the following terms brought
-to market standard:
+Subject: ${ROUND_LABELS[a.round]} term sheet — ready to move quickly
 
-${items || "— No structural changes requested. Proceeding to confirmatory diligence."}
+Thank you for the term sheet — we're excited to partner with you,
+and we want to move fast. The valuation and investment amount work
+for us, and almost all of the documentation is fine as drafted.
+${blockers.length > 0 ? `\nBefore we sign, we need to align on:\n${blockerLines}\n` : ""}${asks.length > 0 ? `\n${blockers.length > 0 ? "We'd also like to request" : "We have " + (asks.length === 1 ? "one request" : asks.length + " requests")}:\n${askLines}\n` : ""}
+Everything else stands as drafted. If we can align on the above,
+we're ready to sign this week.
 
-CONTEXT FOR OUR SIDE (do not send):
-- Post-round: founders ${fdrPct.toFixed(1)}% | investor ${vcPct.toFixed(1)}% | you personally ${youPct.toFixed(1)}%
-- At a ${fmtM(exitVal)} exit you personally take ${fmtM(youBase)} under current terms
-- Market benchmark for ${ROUND_LABELS[a.round]} (${a.mkt.toUpperCase()}): ${bench.lo}–${bench.hi}% dilution — this deal: ${vcPct.toFixed(1)}%`;
-  }, [flags, a, exitVal, fdrPct, vcPct, youPct, youBase, bench]);
+─────────────────────────────────
+PRIVATE NOTES — do not send
+─────────────────────────────────
+• Post-round: founders ${fdrPct.toFixed(1)}% | investor ${vcPct.toFixed(1)}% | you personally ${youPct.toFixed(1)}%
+• Your take-home at a ${fmtM(exitVal)} exit under current terms: ${fmtM(youBase)}
+• Concede odds: ${[...blockers, ...asks].map((f) => `${f.title.split(" — ")[0].replace(/^Ask to /, "")} → ${CONCEDE_LABEL[f.concede].toLowerCase()}`).join("; ") || "n/a"}
+${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f) => f.title.replace(/^Ask to /, "")).join("; ")}\n` : ""}${confirms.length > 0 ? `• Confirm with lawyer: ${confirms.map((f) => f.title.replace("Confirm the ", "")).join("; ")}\n` : ""}• Rule: one email, all asks at once, collaborative tone. Never drip-feed redlines.`;
+  }, [blockers, asks, parked, confirms, a.round, exitVal, fdrPct, vcPct, youPct, youBase]);
 
   /* ─────────────── render: intake ─────────────── */
   if (!done) {
@@ -262,7 +357,7 @@ CONTEXT FOR OUR SIDE (do not send):
         <h1 className="text-2xl font-bold">You got a term sheet. Let's decode it.</h1>
         <p className="mt-1 mb-6 text-sm text-muted-foreground">
           Answer 8 questions straight off the document — takes 3 minutes. We'll tell you what you take home,
-          whether you keep control, and exactly what to push back on.
+          whether you keep control, and which battles are actually worth fighting.
         </p>
 
         <div className="mb-6 flex gap-1.5">
@@ -332,6 +427,26 @@ CONTEXT FOR OUR SIDE (do not send):
                 <Opt sel={a.esopT === 10} title="Yes — 10% post-financing" onClick={() => set("esopT", 10)} />
                 <Opt sel={a.esopT === 12} title="Yes — 12% post-financing" onClick={() => set("esopT", 12)} />
                 <Opt sel={a.esopT === 15} title="Yes — 15% post-financing" desc="Common ask in US Series A. Negotiate it down to your actual 18-month hiring plan." onClick={() => set("esopT", 15)} />
+                <div className={cn(
+                  "flex items-center gap-3 rounded-lg border p-3.5 transition-colors",
+                  ![0, 10, 12, 15].includes(a.esopT) ? "border-accent bg-accent/10" : "border-border bg-card",
+                )}>
+                  <span className="text-sm font-semibold">Yes — a different number:</span>
+                  <Input
+                    type="number"
+                    className="w-24"
+                    min={0}
+                    max={40}
+                    step={0.5}
+                    placeholder="e.g. 8"
+                    value={[0, 10, 12, 15].includes(a.esopT) ? "" : a.esopT}
+                    onChange={(e) => {
+                      const v = +e.target.value;
+                      if (e.target.value !== "" && v >= 0 && v <= 40) set("esopT", v);
+                    }}
+                  />
+                  <span className="text-xs text-muted-foreground">% post-financing</span>
+                </div>
               </div>
             </>
           )}
@@ -401,20 +516,35 @@ CONTEXT FOR OUR SIDE (do not send):
     );
   }
 
-  /* ─────────────── render: results ─────────────── */
-  const verdict =
-    highs === 0
-      ? { cls: "border-success bg-success/10", head: "Sign-able with minor pushback.", body: "The structure is market standard. Resolve any flagged items, then negotiate price if anything." }
-      : highs === 1
-        ? { cls: "border-warning bg-warning/10", head: "Negotiate before signing — 1 clause is costing you real money.", body: "The deal is workable, but fix the red item below first. It's a standard ask; a reasonable investor will move." }
-        : { cls: "border-danger bg-danger/10", head: `Do not sign as-is — ${highs} clauses are off-market.`, body: "Individually each is negotiable; together they suggest an investor testing what you'll accept. Counter all of them at once, in writing." };
-
+  /* ─────────────── render: results (one screen, detail on demand) ─────────────── */
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h1 className="mr-auto text-2xl font-bold">Your term sheet, decoded.</h1>
-        <Button variant="outline" size="sm" onClick={() => setDone(false)}>Edit answers</Button>
+        <Button variant="outline" size="sm" onClick={() => { setDone(false); setShowFull(false); }}>Edit answers</Button>
         <Button size="sm" onClick={openSimulator}>Open in full simulator →</Button>
+      </div>
+
+      {/* leverage selector — changes the advice, not the math */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Your position:</span>
+        {([
+          ["competing", "I have competing offers"],
+          ["normal", "This is my main option"],
+          ["tight", "Under 4 months of runway"],
+        ] as [Leverage, string][]).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setLeverage(v)}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              leverage === v ? "border-accent bg-accent/15 text-foreground" : "border-border text-muted-foreground hover:border-accent/60",
+            )}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className={cn("mb-5 rounded-xl border p-4", verdict.cls)}>
@@ -422,113 +552,175 @@ CONTEXT FOR OUR SIDE (do not send):
         <div className="mt-0.5 text-sm text-muted-foreground">{verdict.body}</div>
       </div>
 
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">① What you personally take home</h2>
+      {/* the one screen that matters: your number + your battles */}
       <Card className="mb-5 p-5">
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">If the company exits at</span>
-          <Input type="number" className="w-28" value={exitVal} step={5} onChange={(e) => +e.target.value > 0 && setExitVal(+e.target.value)} />
-          <span className="text-xs text-muted-foreground">$M</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="mr-auto">
+            <div className="text-3xl font-bold text-success">{fmtM(youBase)}</div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              your personal take-home at a {fmtM(exitVal)} exit · you hold {youPct.toFixed(1)}% after this round
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            exit value
+            <Input type="number" className="w-24" value={exitVal} step={5} onChange={(e) => +e.target.value > 0 && setExitVal(+e.target.value)} />
+            $M
+          </label>
         </div>
-        <div className="mt-3 text-3xl font-bold text-success">{fmtM(youBase)}</div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Your payout at a {fmtM(exitVal)} exit, holding {youPct.toFixed(1)}% after this round (down from {a.you}%).
-        </p>
-        <table className="mt-3 w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-muted-foreground">
-              <th className="py-1.5 font-medium">Exit value</th>
-              <th className="py-1.5 text-right font-medium">VC takes</th>
-              <th className="py-1.5 text-right font-medium">You take</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[exitVal * 0.5, exitVal, exitVal * 2].map((ev) => {
-              const p = calcPayouts(snap, ev, true);
-              const vcTake = snap.holders.filter((h) => h.type === "vc").reduce((s, h) => s + (p[h.name] ?? 0), 0);
-              return (
-                <tr key={ev} className="border-t border-border">
-                  <td className="py-1.5">{fmtM(ev)}</td>
-                  <td className="py-1.5 text-right">{fmtM(vcTake)}</td>
-                  <td className="py-1.5 text-right font-semibold">{fmtM(p["Founder 1"] ?? 0)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
       </Card>
 
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">② Do you keep control?</h2>
-      <div className="mb-5 grid gap-4 sm:grid-cols-3">
-        <Card className="p-4">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Board</div>
-          <div className={cn("mt-1 text-xl font-bold", vcSeats >= 2 ? "text-danger" : "text-success")}>
-            {vcSeats === 0 ? "You control it" : `${vcSeats} investor seat${vcSeats > 1 ? "s" : ""}`}
+      {(blockers.length > 0 || asks.length > 0) && (
+        <>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Your {blockers.length + asks.length === 1 ? "one battle" : `${blockers.length + asks.length} battles`} — ranked, everything else is fine
+          </h2>
+          <div className="mb-5 grid gap-3">
+            {blockers.map((f) => (
+              <Card key={f.title} className="border-l-4 border-l-danger p-4">
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="text-sm font-semibold">{f.title}</div>
+                  <span className="ml-auto rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger">Deal-breaker</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{f.body}</p>
+                <p className="mt-1.5 text-xs font-medium">{f.ask}</p>
+                <p className="mt-1.5 text-[11px] font-semibold text-success">{CONCEDE_LABEL[f.concede]}</p>
+              </Card>
+            ))}
+            {asks.map((f) => (
+              <Card key={f.title} className="border-l-4 border-l-warning p-4">
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="text-sm font-semibold">{f.title}</div>
+                  {f.cost !== undefined && f.cost > 0.005 && (
+                    <span className="ml-auto text-sm font-bold text-warning">worth {fmtM(f.cost)} to you</span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{f.body}</p>
+                <p className="mt-1.5 text-xs font-medium">{f.ask}</p>
+                <p className={cn("mt-1.5 text-[11px] font-semibold", f.concede === "high" ? "text-success" : f.concede === "medium" ? "text-warning" : "text-danger")}>
+                  {CONCEDE_LABEL[f.concede]}
+                </p>
+              </Card>
+            ))}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {vcSeats >= 2
-              ? "Two investor seats after one round is aggressive — with an independent, you can be outvoted."
-              : vcSeats === 1
-                ? "Typical 2-1-1 board. You're not outvoted unless the independent sides against you."
-                : "No investor vote on the board."}
-          </p>
+        </>
+      )}
+
+      {accepts.length > 0 && (
+        <Card className="mb-5 border-l-4 border-l-success p-4">
+          <div className="text-sm font-semibold">Accept as drafted — don't spend chips here</div>
+          <ul className="mt-2 grid gap-1">
+            {accepts.map((it) => (
+              <li key={it.title} className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{it.title}.</span> {it.note}
+              </li>
+            ))}
+          </ul>
+          {parked.length > 0 && (
+            <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Parked for now:</span>{" "}
+              {parked.map((f) => f.title.replace(/^Ask to /, "")).join("; ")} — real issues, but not worth your
+              {leverage === "tight" ? " single ask" : ` ${askBudget} asks`} in this position.
+            </p>
+          )}
         </Card>
-        <Card className="p-4">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Founder ownership</div>
-          <div className={cn("mt-1 text-xl font-bold", fdrPct >= 51 ? "text-success" : fdrPct >= 26 ? "text-warning" : "text-danger")}>
-            {fdrPct.toFixed(1)}%
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {fdrPct >= 51
-              ? "Founders keep majority — you pass ordinary resolutions alone."
-              : fdrPct >= 26
-                ? a.mkt === "india"
-                  ? "Below 51% you can't pass ordinary resolutions alone; above 26% you still block special resolutions (Companies Act)."
-                  : "Below 50%, but you likely retain blocking rights via protective provisions — check the voting agreement."
-                : "Below 26% — you lose statutory blocking rights. This round takes you into dependent territory."}
-          </p>
+      )}
+
+      {confirms.length > 0 && (
+        <Card className="mb-5 border-l-4 border-l-warning p-4">
+          <div className="text-sm font-semibold">Confirm with your lawyer</div>
+          <ul className="mt-2 grid gap-1">
+            {confirms.map((f) => (
+              <li key={f.title} className="text-xs text-muted-foreground">{f.body}</li>
+            ))}
+          </ul>
         </Card>
-        <Card className="p-4">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Dilution vs. market</div>
-          <div className={cn("mt-1 text-xl font-bold", vcPct > bench.hi ? "text-danger" : vcPct >= bench.lo ? "text-warning" : "text-success")}>
-            {vcPct.toFixed(1)}%
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {ROUND_BENCHMARK_NOTES[a.mkt][a.round]} Typical: {bench.lo}–{bench.hi}%.
-          </p>
-        </Card>
+      )}
+
+      <div className="mb-5 flex gap-2">
+        <Button variant="outline" onClick={() => setShowFull((s) => !s)}>
+          {showFull ? "Hide full analysis" : "Show full analysis →"}
+        </Button>
+        <Button onClick={() => navigator.clipboard?.writeText(memo)}>Copy negotiation email</Button>
       </div>
 
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">③ What to push back on — priced in dollars</h2>
-      <div className="mb-5 grid gap-3">
-        {flags.length === 0 && (
-          <Card className="border-l-4 border-l-success p-4">
-            <div className="text-sm font-semibold">This is a clean, market-standard term sheet</div>
-            <p className="mt-1 text-xs text-muted-foreground">1x non-participating, weighted-average anti-dilution, standard board. Negotiate valuation if anything — the structure is fine.</p>
+      {showFull && (
+        <>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Payouts across exit values</h2>
+          <Card className="mb-5 p-5">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-1.5 font-medium">Exit value</th>
+                  <th className="py-1.5 text-right font-medium">VC takes</th>
+                  <th className="py-1.5 text-right font-medium">You take</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[exitVal * 0.5, exitVal, exitVal * 2].map((ev) => {
+                  const p = calcPayouts(snap, ev, true);
+                  const vcTake = snap.holders.filter((h) => h.type === "vc").reduce((s, h) => s + (p[h.name] ?? 0), 0);
+                  return (
+                    <tr key={ev} className="border-t border-border">
+                      <td className="py-1.5">{fmtM(ev)}</td>
+                      <td className="py-1.5 text-right">{fmtM(vcTake)}</td>
+                      <td className="py-1.5 text-right font-semibold">{fmtM(p["Founder 1"] ?? 0)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </Card>
-        )}
-        {flags.map((f) => (
-          <Card key={f.title} className={cn("flex gap-4 border-l-4 p-4", f.sev === "high" ? "border-l-danger" : "border-l-warning")}>
-            <div className="flex-1">
-              <div className="text-sm font-semibold">{f.title}</div>
-              <p className="mt-1 text-xs text-muted-foreground">{f.body}</p>
-              {f.ask && <p className="mt-1.5 text-xs font-medium text-accent-foreground/80">Ask: {f.ask}</p>}
-            </div>
-            {f.cost !== undefined && f.cost > 0.005 && (
-              <div className={cn("min-w-[90px] text-right text-lg font-bold", f.sev === "high" ? "text-danger" : "text-warning")}>
-                +{fmtM(f.cost)}
+
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Control</h2>
+          <div className="mb-5 grid gap-4 sm:grid-cols-3">
+            <Card className="p-4">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Board</div>
+              <div className={cn("mt-1 text-xl font-bold", vcSeats >= 2 ? "text-danger" : "text-success")}>
+                {vcSeats === 0 ? "You control it" : `${vcSeats} investor seat${vcSeats > 1 ? "s" : ""}`}
               </div>
-            )}
-          </Card>
-        ))}
-      </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {vcSeats >= 2
+                  ? "Two investor seats after one round is aggressive — with an independent, you can be outvoted."
+                  : vcSeats === 1
+                    ? "Typical 2-1-1 board. You're not outvoted unless the independent sides against you."
+                    : "No investor vote on the board."}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Founder ownership</div>
+              <div className={cn("mt-1 text-xl font-bold", fdrPct >= 51 ? "text-success" : fdrPct >= 26 ? "text-warning" : "text-danger")}>
+                {fdrPct.toFixed(1)}%
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {fdrPct >= 51
+                  ? "Founders keep majority — you pass ordinary resolutions alone."
+                  : fdrPct >= 26
+                    ? a.mkt === "india"
+                      ? "Below 51% you can't pass ordinary resolutions alone; above 26% you still block special resolutions (Companies Act)."
+                      : "Below 50%, but you likely retain blocking rights via protective provisions — check the voting agreement."
+                    : "Below 26% — you lose statutory blocking rights. This round takes you into dependent territory."}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Dilution vs. market</div>
+              <div className={cn("mt-1 text-xl font-bold", vcPct > bench.hi ? "text-danger" : vcPct >= bench.lo ? "text-warning" : "text-success")}>
+                {vcPct.toFixed(1)}%
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {ROUND_BENCHMARK_NOTES[a.mkt][a.round]} Typical: {bench.lo}–{bench.hi}%.
+              </p>
+            </Card>
+          </div>
 
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Your negotiation one-pager</h2>
-      <p className="mb-2 text-xs text-muted-foreground">Forward this to your lawyer and co-founders. Read from it on the call.</p>
-      <pre className="whitespace-pre-wrap rounded-xl border border-dashed border-border bg-muted/30 p-5 font-mono text-xs leading-relaxed">{memo}</pre>
-      <div className="mt-3 flex gap-2">
-        <Button onClick={() => navigator.clipboard?.writeText(memo)}>Copy memo</Button>
-        <Button variant="outline" onClick={openSimulator}>Open in full simulator →</Button>
-      </div>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Your negotiation email — draft</h2>
+          <p className="mb-2 text-xs text-muted-foreground">One email, all asks at once, collaborative tone. The private notes stay with you.</p>
+          <pre className="whitespace-pre-wrap rounded-xl border border-dashed border-border bg-muted/30 p-5 font-mono text-xs leading-relaxed">{memo}</pre>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={() => navigator.clipboard?.writeText(memo)}>Copy email</Button>
+            <Button variant="outline" onClick={openSimulator}>Open in full simulator →</Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

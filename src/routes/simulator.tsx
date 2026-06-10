@@ -41,6 +41,9 @@ function SimulatorPage() {
             <EquiCompassLogo variant="nav" dark={true} />
           </Link>
           <div className="flex items-center gap-3">
+            <Link to="/decode" className="text-xs font-medium text-white/60 hover:text-white transition-colors">
+              Decode a term sheet
+            </Link>
             <span className="hidden sm:inline text-xs text-white/40 font-medium">
               All changes saved locally
             </span>
