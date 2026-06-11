@@ -41,6 +41,7 @@ import {
   type SimulatorState,
   type VestingConfig,
 } from "@/lib/equity/types";
+import { Users, Settings2, PieChart as PieChartIcon, Shield, BarChart3 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -54,6 +55,29 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { cn } from "@/lib/utils";
 
 const EXTRA_FOUNDER_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#84cc16", "#06b6d4"];
+
+/** One-click journey presets — load a complete, realistic multi-round scenario
+ *  from the market defaults, then let the user tweak instead of author. */
+interface JourneyPreset {
+  id: string;
+  label: string;
+  desc: string;
+  rounds: RoundKey[];
+  safe?: boolean;
+}
+
+const JOURNEY_PRESETS: Record<"india" | "us", JourneyPreset[]> = {
+  india: [
+    { id: "in-seed-a", label: "🌱 Seed → Series A", desc: "The standard India venture path", rounds: ["seed", "a"] },
+    { id: "in-safe", label: "🤝 Angel SAFE → Seed → A", desc: "Angel SAFE converts at Seed", rounds: ["seed", "a"], safe: true },
+    { id: "in-full", label: "🚀 Pre-seed → Series C", desc: "The full journey, all five rounds", rounds: ["preseed", "seed", "a", "b", "c"] },
+  ],
+  us: [
+    { id: "us-yc", label: "🟧 YC route: SAFE → Seed → A", desc: "$500K SAFE converts at Seed", rounds: ["seed", "a"], safe: true },
+    { id: "us-seed-a", label: "🌱 Seed → Series A", desc: "The standard US venture path", rounds: ["seed", "a"] },
+    { id: "us-full", label: "🚀 Pre-seed → Series C", desc: "The full journey, all five rounds", rounds: ["preseed", "seed", "a", "b", "c"] },
+  ],
+};
 
 interface Props {
   state: SimulatorState;
@@ -69,6 +93,8 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
   const [capRound, setCapRound] = useState<string>("pre");
   const activeCap = snaps[capRound] ?? latest;
   const [expertMode, setExpertMode] = useState(false);
+  const [negLeverage, setNegLeverage] = useState<"competing" | "normal" | "tight">("normal");
+  const [showVetoLibrary, setShowVetoLibrary] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [activeTab, setActiveTab] = useState("setup");
   const [savedScenarios, setSavedScenarios] = useState<
@@ -91,6 +117,21 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
   const updateRound = (k: RoundKey, patch: Partial<RoundConfig>) => {
     if (readOnly) return;
     onChange({ ...state, rounds: { ...state.rounds, [k]: { ...state.rounds[k], ...patch } } });
+  };
+
+  const applyJourney = (p: JourneyPreset) => {
+    if (readOnly) return;
+    const base = state.market === "us" ? US_DEFAULT_ROUNDS : INDIA_DEFAULT_ROUNDS;
+    const rounds = Object.fromEntries(
+      Object.entries(base).map(([k, r]) => [k, { ...r, enabled: p.rounds.includes(k as RoundKey) }]),
+    ) as SimulatorState["rounds"];
+    onChange({
+      ...state,
+      rounds,
+      safe: p.safe
+        ? { enabled: true, amount: state.market === "us" ? 0.5 : 0.25, cap: state.market === "us" ? 8 : 3, discount: 20, mfn: false }
+        : { ...state.safe, enabled: false },
+    });
   };
 
   const updateSafe = <K extends keyof SimulatorState["safe"]>(field: K, value: SimulatorState["safe"][K]) => {
@@ -252,6 +293,104 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
 
   const hasParticipatingPreferred = enabledRounds.some((k) => state.rounds[k].prefType === "part");
   const participatingRoundNames = enabledRounds.filter((k) => state.rounds[k].prefType === "part").map((k) => ROUND_LABELS[k]).join(", ");
+
+  // ── Negotiate tab: leverage-aware battle ranking (mirrors /decode logic) ──
+  type NegBattle = { tier: "blocker" | "ask"; title: string; detail: string; cost?: number; concede: string; concedeTone: "good" | "mid" | "bad" };
+  const negBattleData = useMemo(() => {
+    const founderTakeUnder = (mod: Partial<RoundConfig>) => {
+      const rounds = Object.fromEntries(
+        ROUND_KEYS.map((k) => [k, state.rounds[k].enabled ? { ...state.rounds[k], ...mod } : state.rounds[k]]),
+      ) as SimulatorState["rounds"];
+      const sn = latestSnap(computeSnaps({ ...state, rounds }));
+      const p = calcPayouts(sn, state.exitValue, true);
+      return sn.holders.filter((h) => h.type === "founder").reduce((acc, h) => acc + (p[h.name] || 0), 0);
+    };
+    const currentTake = founderTakeUnder({});
+    // isUS is declared later in the component — derive locally to avoid TDZ
+    const fs = state.founderStructure ?? (state.market === "us" ? "us" : "india-flip");
+    const usMode = fs === "us" || fs === "india-us-move";
+
+    const blockers: NegBattle[] = [];
+    const asksAll: NegBattle[] = [];
+    const accepts: string[] = [];
+
+    const ratchetRounds = enabledRounds.filter((k) => state.rounds[k].antiDilution === "full-ratchet");
+    if (ratchetRounds.length > 0) {
+      blockers.push({
+        tier: "blocker",
+        title: `Full ratchet anti-dilution at ${ratchetRounds.map((k) => ROUND_LABELS[k]).join(", ")}`,
+        detail: "In any down round, this investor's price fully resets at the founders' expense. Not market standard anywhere — ask for broad-based weighted average. A 5-minute redline, not a fight.",
+        concede: "VCs usually concede this", concedeTone: "good",
+      });
+    }
+    const multRounds = enabledRounds.filter((k) => state.rounds[k].prefMult > 1);
+    if (multRounds.length > 0) {
+      blockers.push({
+        tier: "blocker",
+        title: `${multRounds.map((k) => `${state.rounds[k].prefMult}x at ${ROUND_LABELS[k]}`).join(", ")} preference multiple`,
+        detail: "Anything above 1x is a price negotiation in disguise. Ask for 1x — the universal standard; counter on valuation if they want downside protection.",
+        cost: founderTakeUnder({ prefMult: 1 }) - currentTake,
+        concede: "VCs usually concede this", concedeTone: "good",
+      });
+    }
+    if (hasParticipatingPreferred) {
+      asksAll.push({
+        tier: "ask",
+        title: `Remove "participating" (${participatingRoundNames})`,
+        detail: usMode
+          ? "Non-participating is the NVCA-model default — most US funds conform without argument."
+          : 'Non-participating is the India market standard at every stage. Proposed language: "Investors elect preference OR pro-rata — not both."',
+        cost: founderTakeUnder({ prefType: "non" }) - currentTake,
+        concede: "VCs usually concede this", concedeTone: "good",
+      });
+    } else if (anyRoundsEnabled && multRounds.length === 0) {
+      accepts.push("1x non-participating preference everywhere — exactly what you want. Accept as drafted.");
+    }
+    if (hasRedemption) {
+      asksAll.push({
+        tier: "ask",
+        title: `Soften or remove redemption rights (${fmtM(totalRedemptionLiability)} liability)`,
+        detail: usMode
+          ? "Post-2015 NVCA documents omit redemption entirely — most US VCs drop it when asked. Fall-back: 1x cap, year-7 trigger, 75% preferred approval."
+          : "Indian funds keep it for DPI optics but rarely enforce. Fall-back: 1x cap, trigger after year 7 only, 3-year installments. Companies Act §68 limits enforcement anyway.",
+        concede: usMode ? "VCs usually concede this" : "Often negotiable", concedeTone: usMode ? "good" : "mid",
+      });
+    } else if (anyRoundsEnabled) {
+      accepts.push("No redemption rights — good. Nothing to do.");
+    }
+    const fatEsopRounds = enabledRounds.filter((k) => state.rounds[k].esop >= 15);
+    if (fatEsopRounds.length > 0) {
+      asksAll.push({
+        tier: "ask",
+        title: `Size the ESOP top-up below ${Math.max(...fatEsopRounds.map((k) => state.rounds[k].esop))}% (${fatEsopRounds.map((k) => ROUND_LABELS[k]).join(", ")})`,
+        detail: "The pool is created pre-money — the entire top-up dilutes existing holders, not the investor. Counter with a bottoms-up 18-month hiring plan; 10–12% is usually defensible.",
+        concede: "Often negotiable", concedeTone: "mid",
+      });
+    }
+    if (anyRoundsEnabled && latest.vcSeats >= founderSeats && latest.vcSeats > 0) {
+      asksAll.push({
+        tier: "ask",
+        title: `Rebalance the board (VCs hold ${latest.vcSeats} vs your ${founderSeats})`,
+        detail: "Push later rounds to observer seats; one seat for each lead is defensible, parity or worse is not. Also negotiate founders nominate the independent director.",
+        concede: "Often negotiable", concedeTone: "mid",
+      });
+    } else if (anyRoundsEnabled && latest.vcSeats < founderSeats) {
+      accepts.push("Founder-controlled board — standard seat ask per lead is fine. Don't fight observer seats.");
+    }
+    if (anyRoundsEnabled && ratchetRounds.length === 0 && enabledRounds.every((k) => state.rounds[k].antiDilution !== "full-ratchet")) {
+      accepts.push("Weighted-average (or no) anti-dilution — market standard. Don't spend a chip here.");
+    }
+
+    const budget = negLeverage === "competing" ? 3 : negLeverage === "tight" ? 1 : 2;
+    const toneRank = { good: 0, mid: 1, bad: 2 } as const;
+    const sorted = [...asksAll].sort((x, y) => {
+      const cx = x.cost ?? 0, cy = y.cost ?? 0;
+      if (Math.abs(cy - cx) > 0.01) return cy - cx;
+      return toneRank[x.concedeTone] - toneRank[y.concedeTone];
+    });
+    return { blockers, asks: sorted.slice(0, budget), parked: sorted.slice(budget), accepts, budget, totalAsks: asksAll.length };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, enabledRounds, hasParticipatingPreferred, participatingRoundNames, hasRedemption, totalRedemptionLiability, anyRoundsEnabled, latest, founderSeats, negLeverage]);
 
   // founderStructure drives market + compliance guidance
   // Normalise: old saves without founderStructure default to matching market field
@@ -777,20 +916,12 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         <span className={cn("text-xs font-semibold", !expertMode ? "text-primary" : "text-muted-foreground")}>Beginner</span>
         <Switch
           checked={expertMode}
-          onCheckedChange={(v) => {
-            setExpertMode(v);
-            if (!v && (activeTab === "veto" || activeTab === "protect")) {
-              setActiveTab("captable");
-            }
-          }}
+          onCheckedChange={(v) => setExpertMode(v)}
         />
         <span className={cn("text-xs font-semibold", expertMode ? "text-primary" : "text-muted-foreground")}>Expert</span>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => {
-        if (!expertMode && (v === "veto" || v === "protect")) return;
-        setActiveTab(v);
-      }} className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         {/* Tab scroll container with fade indicators */}
         <div
           className="tab-scroll-container hidden md:block"
@@ -808,13 +939,11 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         >
           <div className="tab-inner-scroll overflow-x-auto -mx-1 px-1 pb-1 scrollbar-none" style={{ scrollbarWidth: "none" }}>
             <TabsList className="tab-hint-animate flex w-max min-w-full h-auto gap-1 p-1">
-              <TabsTrigger value="setup" className="flex-shrink-0 text-xs px-3 py-2">👥 Setup</TabsTrigger>
-              <TabsTrigger value="rounds" className="flex-shrink-0 text-xs px-3 py-2">⚙️ Rounds</TabsTrigger>
-              <TabsTrigger value="captable" className="flex-shrink-0 text-xs px-3 py-2">📋 Cap Table</TabsTrigger>
-              <TabsTrigger value="veto" className={cn("flex-shrink-0 text-xs px-3 py-2", !expertMode && "opacity-30 pointer-events-none")}>🛡️ Veto</TabsTrigger>
-              <TabsTrigger value="protect" className={cn("flex-shrink-0 text-xs px-3 py-2", !expertMode && "opacity-30 pointer-events-none")}>🔒 Protect</TabsTrigger>
-              <TabsTrigger value="exit" className="flex-shrink-0 text-xs px-3 py-2">💰 Exit</TabsTrigger>
-              <TabsTrigger value="compare" className="flex-shrink-0 text-xs px-3 py-2">📊 Compare</TabsTrigger>
+              <TabsTrigger value="setup" className="flex-shrink-0 text-xs px-3 py-2 gap-1.5"><Users className="h-3.5 w-3.5" /> Setup</TabsTrigger>
+              <TabsTrigger value="rounds" className="flex-shrink-0 text-xs px-3 py-2 gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Rounds</TabsTrigger>
+              <TabsTrigger value="outcomes" className="flex-shrink-0 text-xs px-3 py-2 gap-1.5"><PieChartIcon className="h-3.5 w-3.5" /> Outcomes</TabsTrigger>
+              <TabsTrigger value="negotiate" className="flex-shrink-0 text-xs px-3 py-2 gap-1.5"><Shield className="h-3.5 w-3.5" /> Negotiate</TabsTrigger>
+              <TabsTrigger value="compare" className="flex-shrink-0 text-xs px-3 py-2 gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Compare</TabsTrigger>
             </TabsList>
           </div>
         </div>
@@ -1512,6 +1641,31 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
             <span className="ml-auto text-muted-foreground">← change in Setup</span>
           </button>
 
+          {/* One-click journey presets */}
+          {!readOnly && (
+            <Card className="p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                Start from a typical journey
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                One click loads realistic {isUS ? "US" : "India"} numbers for every round — then tweak anything below.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {JOURNEY_PRESETS[isUS ? "us" : "india"].map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => applyJourney(p)}
+                    className="rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-accent"
+                  >
+                    <div className="text-sm font-semibold">{p.label}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{p.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* SECTION A — Insight Engine */}
           <Card className="p-4 bg-[#1a1a2e] text-white">
             <div className="text-xs font-semibold uppercase tracking-wide text-white/70 mb-2">
@@ -1959,7 +2113,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         </TabsContent>
 
         {/* ── CAP TABLE ── */}
-        <TabsContent value="captable" className="space-y-3 mt-4">
+        <TabsContent value="outcomes" className="space-y-3 mt-4">
           <Card className="p-4">
             <div className="flex gap-2 flex-wrap mb-3">
               {snapKeys.map((k) => (
@@ -2256,7 +2410,103 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         </TabsContent>
 
         {/* ── VETO ── */}
-        <TabsContent value="veto" className="space-y-3 mt-4">
+        <TabsContent value="negotiate" className="space-y-3 mt-4">
+
+          {/* ── Your battles — leverage-aware, ranked (mirrors /decode) ── */}
+          <Card className="p-4">
+            <div className="font-semibold text-sm text-foreground mb-2">Your negotiation — ranked battles</div>
+            {!anyRoundsEnabled ? (
+              <p className="text-xs text-muted-foreground">Enable rounds in ⚙️ Rounds to get a ranked negotiation plan.</p>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <span className="text-xs text-muted-foreground">Your position:</span>
+                  {([
+                    ["competing", "I have competing offers"],
+                    ["normal", "This is my main option"],
+                    ["tight", "Under 4 months of runway"],
+                  ] as const).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setNegLeverage(v)}
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        negLeverage === v ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-primary/50",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <span className="text-[11px] text-muted-foreground">
+                    → ask budget: <b>{negBattleData.budget}</b>
+                    {negBattleData.totalAsks > 0
+                      ? ` · using ${negBattleData.asks.length} of ${negBattleData.totalAsks} possible asks`
+                      : negBattleData.blockers.length > 0 ? "" : " · nothing worth asking — these terms are clean"}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {negBattleData.blockers.map((b) => (
+                    <div key={b.title} className="rounded-lg border border-l-4 border-l-danger border-border p-3">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div className="text-sm font-semibold">{b.title}</div>
+                        <span className="ml-auto rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger">Deal-breaker</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{b.detail}</p>
+                      <p className="mt-1 text-[11px] font-semibold text-success">{b.concede}</p>
+                    </div>
+                  ))}
+                  {negBattleData.asks.map((b) => (
+                    <div key={b.title} className="rounded-lg border border-l-4 border-l-warning border-border p-3">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div className="text-sm font-semibold">{b.title}</div>
+                        {b.cost !== undefined && b.cost > 0.005 && (
+                          <span className="ml-auto text-sm font-bold text-warning">worth {fmtM(b.cost)} to founders</span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{b.detail}</p>
+                      <p className={cn("mt-1 text-[11px] font-semibold", b.concedeTone === "good" ? "text-success" : b.concedeTone === "mid" ? "text-warning" : "text-danger")}>{b.concede}</p>
+                    </div>
+                  ))}
+                  {negBattleData.blockers.length === 0 && negBattleData.asks.length === 0 && (
+                    <div className="rounded-lg border border-l-4 border-l-success border-border p-3">
+                      <div className="text-sm font-semibold">These terms are market standard</div>
+                      <p className="mt-1 text-xs text-muted-foreground">Don't manufacture a negotiation — confirm details with your lawyer and move forward.</p>
+                    </div>
+                  )}
+                </div>
+
+                {(negBattleData.accepts.length > 0 || negBattleData.parked.length > 0) && (
+                  <div className="mt-3 rounded-lg border border-l-4 border-l-success border-border p-3">
+                    <div className="text-xs font-semibold">Accept as drafted — don't spend chips here</div>
+                    <ul className="mt-1.5 space-y-1">
+                      {negBattleData.accepts.map((t) => (
+                        <li key={t} className="text-xs text-muted-foreground">{t}</li>
+                      ))}
+                    </ul>
+                    {negBattleData.parked.length > 0 && (
+                      <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">Parked for now:</span>{" "}
+                        {negBattleData.parked.map((b) => b.title).join("; ")} — real issues, but not worth your ask budget in this position.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+
+          {/* ── Full veto-rights library (collapsed by default) ── */}
+          <button
+            type="button"
+            onClick={() => setShowVetoLibrary((s) => !s)}
+            className="w-full rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-left text-xs font-semibold hover:bg-muted transition-colors"
+          >
+            {showVetoLibrary ? "▾ Hide" : "▸ Show"} the full veto-rights library — all 24 clauses with exact negotiation language
+          </button>
+
+          {showVetoLibrary && (
           <Card className="p-4">
             <div className="font-semibold text-sm text-foreground">VC Veto Rights — Active Triggers</div>
             <div className="text-xs text-muted-foreground mt-1">
@@ -2635,6 +2885,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
               );
             })()}
           </Card>
+          )}
 
           <Card className="p-4">
             <div className="font-semibold text-sm mb-1 text-foreground">Key Ownership Thresholds</div>
@@ -2777,7 +3028,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         </TabsContent>
 
         {/* ── PROTECT ── */}
-        <TabsContent value="protect" className="space-y-3 mt-4">
+        <TabsContent value="negotiate" className="space-y-3 mt-4 border-t border-border pt-6">
           <Card className="p-4">
             <div className="font-semibold text-sm mb-3 text-foreground">Founder Control vs. Danger Zones</div>
             <div className="h-64">
@@ -3141,7 +3392,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         </TabsContent>
 
         {/* ── EXIT ── */}
-        <TabsContent value="exit" className="space-y-3 mt-4">
+        <TabsContent value="outcomes" className="space-y-3 mt-4 border-t border-border pt-6">
 
           {/* Controls */}
           <Card className="p-4">
@@ -3464,14 +3715,12 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         style={{ background: "oklch(0.22 0.04 265)", borderColor: "oklch(0.76 0.15 285 / 0.25)" }}>
         <div className="flex overflow-x-auto scrollbar-none">
           {([
-            { value: "setup",    emoji: "👥", label: "Setup" },
-            { value: "rounds",   emoji: "⚙️",  label: "Rounds" },
-            { value: "captable", emoji: "📋", label: "Cap Table" },
-            { value: "exit",     emoji: "💰", label: "Exit" },
-            { value: "veto",     emoji: "🛡️",  label: "Veto",    expert: true },
-            { value: "protect",  emoji: "🔒", label: "Protect", expert: true },
-            { value: "compare",  emoji: "📊", label: "Compare" },
-          ] as const).filter((t): t is typeof t => !('expert' in t && (t as {expert?: boolean}).expert && !expertMode)).map((tab) => {
+            { value: "setup",     Icon: Users,        label: "Setup" },
+            { value: "rounds",    Icon: Settings2,    label: "Rounds" },
+            { value: "outcomes",  Icon: PieChartIcon, label: "Outcomes" },
+            { value: "negotiate", Icon: Shield,       label: "Negotiate" },
+            { value: "compare",   Icon: BarChart3,    label: "Compare" },
+          ] as const).map((tab) => {
             const isActive = activeTab === tab.value;
             return (
               <button
@@ -3483,7 +3732,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                   borderTop: isActive ? "2px solid oklch(0.76 0.15 285)" : "2px solid transparent",
                 }}
               >
-                <span className="text-lg leading-none">{tab.emoji}</span>
+                <tab.Icon className="h-[18px] w-[18px]" />
                 <span className="text-xs font-medium tracking-tight whitespace-nowrap">{tab.label}</span>
               </button>
             );

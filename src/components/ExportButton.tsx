@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { pdf } from "@react-pdf/renderer";
-import { PdfReport, type PdfData } from "./PdfReport";
+import type { PdfData } from "./PdfReport";
 import { Button } from "@/components/ui/button";
 import {
   computeSnaps,
@@ -23,6 +22,11 @@ export function ExportButton({ state, scenarioName }: Props) {
   const handleExport = async () => {
     setLoading(true);
     try {
+      // Lazy-load the PDF stack (~1.5MB) only when the user actually exports.
+      const [{ pdf }, { PdfReport }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("./PdfReport"),
+      ]);
       const snaps = computeSnaps(state);
       const latest = latestSnap(snaps);
       const snapKeys = Object.keys(snaps);

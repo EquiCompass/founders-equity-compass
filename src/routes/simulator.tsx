@@ -15,22 +15,49 @@ export const Route = createFileRoute("/simulator")({
   component: SimulatorPage,
 });
 
+const STORAGE_KEY = "equicompass.simulator.v1";
+
 function SimulatorPage() {
   const [state, setState] = useState<SimulatorState>(DEFAULT_STATE);
+  const [hydrated, setHydrated] = useState(false);
 
-  // Pick up a deal handed over from the term-sheet decoder (/decode).
-  // Done in an effect (not the useState initializer) to stay SSR/hydration-safe.
+  // Restore on load: a deal handed over from /decode wins; otherwise the last
+  // session from localStorage. Done in an effect (not the useState initializer)
+  // to stay SSR/hydration-safe.
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(DECODED_STATE_KEY);
-      if (raw) {
+      const decoded = sessionStorage.getItem(DECODED_STATE_KEY);
+      if (decoded) {
         sessionStorage.removeItem(DECODED_STATE_KEY);
-        setState({ ...DEFAULT_STATE, ...(JSON.parse(raw) as SimulatorState) });
+        setState({ ...DEFAULT_STATE, ...(JSON.parse(decoded) as SimulatorState) });
+      } else {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) setState({ ...DEFAULT_STATE, ...(JSON.parse(saved) as SimulatorState) });
       }
     } catch {
       /* corrupt or unavailable storage — keep defaults */
     }
+    setHydrated(true);
   }, []);
+
+  // Persist every change — makes "All changes saved locally" actually true.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      /* storage full or unavailable — silently skip */
+    }
+  }, [state, hydrated]);
+
+  const resetAll = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    setState(DEFAULT_STATE);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -47,6 +74,14 @@ function SimulatorPage() {
             <span className="hidden sm:inline text-xs text-white/40 font-medium">
               All changes saved locally
             </span>
+            <button
+              type="button"
+              onClick={resetAll}
+              className="text-xs font-medium text-white/40 hover:text-white transition-colors"
+              title="Clear the saved scenario and start fresh"
+            >
+              Reset
+            </button>
             <ExportButton state={state} scenarioName="My Scenario" />
           </div>
         </div>

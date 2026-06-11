@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { OwnershipGauge } from "@/components/OwnershipGauge";
 import { cn } from "@/lib/utils";
 
 /** sessionStorage key used to hand the decoded deal to /simulator */
@@ -322,7 +323,11 @@ export function TermSheetDecoder() {
       : {
           cls: "border-success bg-success/10",
           head: "This is a clean, market-standard term sheet.",
-          body: "Don't manufacture a negotiation. Confirm the details with your lawyer and sign while the offer is warm.",
+          body: leverage === "competing"
+            ? "Even with competing offers, there's nothing structural to fix here. If you push, push on valuation — and gently. Don't manufacture a negotiation."
+            : leverage === "tight"
+              ? "Good news given your runway: nothing needs fixing. Confirm the details with your lawyer and close as fast as possible."
+              : "Don't manufacture a negotiation. Confirm the details with your lawyer and sign while the offer is warm.",
         };
 
   /* ── collaborative memo ── */
@@ -545,6 +550,9 @@ ${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f)
             {label}
           </button>
         ))}
+        <span className="w-full text-[11px] text-muted-foreground sm:w-auto">
+          → ask budget: <b>{askBudget}</b>{allAsks.length > 0 ? ` · using ${asks.length} of ${allAsks.length} possible asks` : " · nothing worth asking — this deal is clean"}
+        </span>
       </div>
 
       <div className={cn("mb-5 rounded-xl border p-4", verdict.cls)}>
@@ -552,20 +560,23 @@ ${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f)
         <div className="mt-0.5 text-sm text-muted-foreground">{verdict.body}</div>
       </div>
 
-      {/* the one screen that matters: your number + your battles */}
+      {/* the one screen that matters: your number + the compass + your battles */}
       <Card className="mb-5 p-5">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-5">
+          <OwnershipGauge pct={fdrPct} size={140} />
           <div className="mr-auto">
-            <div className="text-3xl font-bold text-success">{fmtM(youBase)}</div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <div className="font-display text-4xl font-bold" style={{ background: "linear-gradient(135deg, oklch(0.82 0.1 280), oklch(0.85 0.19 160))", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
+              {fmtM(youBase)}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
               your personal take-home at a {fmtM(exitVal)} exit · you hold {youPct.toFixed(1)}% after this round
             </p>
+            <label className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              exit value
+              <Input type="number" className="w-24" value={exitVal} step={5} onChange={(e) => +e.target.value > 0 && setExitVal(+e.target.value)} />
+              $M
+            </label>
           </div>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            exit value
-            <Input type="number" className="w-24" value={exitVal} step={5} onChange={(e) => +e.target.value > 0 && setExitVal(+e.target.value)} />
-            $M
-          </label>
         </div>
       </Card>
 
