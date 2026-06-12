@@ -434,6 +434,35 @@ input:focus, select:focus, textarea:focus {
 }
 .recharts-tooltip-label, .recharts-tooltip-item { color: oklch(0.93 0.012 280) !important; }
 
+/* ══════════════════════════════════════════════════════════════
+   DARK REMAP — legacy light-palette utilities used throughout the
+   app get translated to cockpit equivalents on product pages
+   (scoped under .dark; the light landing page is unaffected).
+   ══════════════════════════════════════════════════════════════ */
+
+/* tinted backgrounds: *-50/100 pastels → translucent dark tints */
+.dark [class~="bg-red-50"], .dark [class~="bg-red-50/80"], .dark [class~="bg-red-100"] { background-color: oklch(0.66 0.21 15 / 0.12) !important; }
+.dark [class~="bg-amber-50"], .dark [class~="bg-amber-50/50"], .dark [class~="bg-amber-50/60"], .dark [class~="bg-amber-100"] { background-color: oklch(0.81 0.13 70 / 0.12) !important; }
+.dark [class~="bg-emerald-50"], .dark [class~="bg-emerald-50/80"] { background-color: oklch(0.85 0.19 160 / 0.1) !important; }
+.dark [class~="bg-orange-50"], .dark [class~="bg-orange-50/50"] { background-color: oklch(0.75 0.15 50 / 0.12) !important; }
+.dark [class~="bg-blue-50"], .dark [class~="bg-blue-50/50"], .dark [class~="bg-blue-50/60"] { background-color: oklch(0.7 0.12 250 / 0.12) !important; }
+.dark [class~="bg-slate-100"] { background-color: oklch(1 0 0 / 0.07) !important; }
+
+/* dark ink text on tints → luminous text */
+.dark [class~="text-red-600"], .dark [class~="text-red-700"], .dark [class~="text-red-800"] { color: oklch(0.78 0.14 18) !important; }
+.dark [class~="text-emerald-600"], .dark [class~="text-emerald-700"] { color: oklch(0.84 0.16 160) !important; }
+.dark [class~="text-amber-600"], .dark [class~="text-amber-700"], .dark [class~="text-amber-800"], .dark [class~="text-amber-900"] { color: oklch(0.85 0.11 75) !important; }
+.dark [class~="text-orange-700"], .dark [class~="text-orange-800"], .dark [class~="text-orange-900"] { color: oklch(0.82 0.12 55) !important; }
+.dark [class~="text-blue-600"], .dark [class~="text-blue-700"], .dark [class~="text-blue-800"], .dark [class~="text-blue-900"] { color: oklch(0.8 0.1 250) !important; }
+.dark [class~="text-slate-600"] { color: oklch(0.71 0.03 272) !important; }
+
+/* pastel borders → translucent signal borders */
+.dark [class~="border-red-200"], .dark [class~="border-red-300"] { border-color: oklch(0.66 0.21 15 / 0.4) !important; }
+.dark [class~="border-amber-200"], .dark [class~="border-amber-300"] { border-color: oklch(0.81 0.13 70 / 0.4) !important; }
+.dark [class~="border-blue-200"], .dark [class~="border-blue-300"] { border-color: oklch(0.7 0.12 250 / 0.4) !important; }
+.dark [class~="border-emerald-200"], .dark [class~="border-emerald-300"] { border-color: oklch(0.85 0.19 160 / 0.4) !important; }
+.dark [class~="border-orange-300"] { border-color: oklch(0.75 0.15 50 / 0.4) !important; }
+
 .simulator-content .space-y-2 .flex.items-start.gap-2 > span:last-child { opacity: 0.88; }
 
 .simulator-content [data-slot="card"] .rounded-xl.border-l-4 {

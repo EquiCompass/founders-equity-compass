@@ -60,7 +60,7 @@ function SimulatorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="dark min-h-screen bg-background">
       {/* Dark navy header */}
       <header style={{ background: "oklch(0.22 0.04 265)" }} className="border-b border-white/10">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3.5">

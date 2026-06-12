@@ -95,6 +95,9 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
   const [expertMode, setExpertMode] = useState(false);
   const [negLeverage, setNegLeverage] = useState<"competing" | "normal" | "tight">("normal");
   const [showVetoLibrary, setShowVetoLibrary] = useState(false);
+  const [showAllSignals, setShowAllSignals] = useState(false);
+  const [showThresholds, setShowThresholds] = useState(false);
+  const [showProtectDetail, setShowProtectDetail] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [activeTab, setActiveTab] = useState("setup");
   const [savedScenarios, setSavedScenarios] = useState<
@@ -641,20 +644,23 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
       });
     }
 
-    // ── Dual-class shares ────────────────────────────────────────────────────
-    if (anyRoundsEnabled) {
+    // ── Dual-class reality check ─────────────────────────────────────────────
+    // Real-world: institutional VCs do not accept founder super-voting shares in
+    // early rounds — they'll require conversion to single-class as a condition of
+    // investment. Dual-class survives only at IPO (and in India, SEBI permits SR
+    // shares for promoters only at listing). Founders who push this in a Seed/A
+    // negotiation signal inexperience. Control is won through board composition
+    // and reserved matters instead.
+    if (anyRoundsEnabled && founderPct < 51) {
       recs.push({
-        priority: founderPct < 51 ? "high" : "medium",
-        timing: "now",
-        action: isUS
-          ? "Set up dual-class shares (10:1 voting) in Delaware — must be done before first priced round closes"
-          : "Set up dual-class shares (DVR, 10:1 voting) — must be done before first round closes",
+        priority: "medium",
+        timing: "ongoing",
+        action: "Don't fight for dual-class / super-voting shares — protect control through the board instead",
         why: isUS
-          ? `Your founders are at ${founderPct.toFixed(1)}% equity. With dual-class, even at 15% equity you keep majority votes. Google, Meta, and Snap all use this structure. Once VCs invest, adding it requires unanimous shareholder consent — they will almost always say no.`
-          : `Your founders are at ${founderPct.toFixed(1)}% equity. With DVR shares (Class B, 10 votes each) under Companies Act Section 43, even at 20% equity you retain 70%+ of votes. After VCs invest, this requires unanimous consent — practically impossible.`,
-        nextStep: isUS
-          ? "Call a Delaware startup attorney this week. Ask for a dual-class recapitalisation: founders get Class B (10 votes), investors get Class A (1 vote). Cost: $5–15K. Timeline: 2–4 weeks. Do this before any term sheet is signed."
-          : "Engage a CA/CS this week. Ask for DVR share issuance under Section 43 before the first round SPA is signed. Cost: ₹50K–₹2L. Must be approved by shareholders and ROC-filed before allotment.",
+          ? `You're at ${founderPct.toFixed(1)}% — it's tempting to want 10:1 voting shares like Google or Meta. But those structures were locked in at IPO with massive leverage. At Seed/Series A, institutional VCs will require single-class common as a condition of investing; pushing dual-class in an early negotiation costs credibility and wins nothing.`
+          : `You're at ${founderPct.toFixed(1)}% — DVR shares look attractive on paper (Companies Act §43 allows them), but in practice no institutional VC will invest alongside founder super-voting stock, and SEBI only permits SR shares for promoters at IPO. Raising it in a Seed/Series A negotiation costs credibility and wins nothing.`,
+        nextStep: "Spend that negotiating capital where it actually converts: founders nominate the independent director, investor consent matters limited to a market-standard list, and board seats capped per round. Revisit super-voting structures only if you reach an IPO with strong performance leverage.",
+        leverage: "Knowing which battles not to fight is itself a signal of experience — VCs negotiate harder against founders who ask for off-market terms.",
       });
     }
 
@@ -663,12 +669,12 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
       recs.push({
         priority: "high",
         timing: "next-round",
-        action: "Lock in a hard cap: all VCs combined ≤ 2 board seats, forever",
-        why: `You currently have ${vcSeats} VC seat${vcSeats > 1 ? "s" : ""}. Without a cap, every future lead investor will demand a seat — you'll lose board control by Series B without a single bad decision.`,
+        action: "Plan your board math two rounds ahead — every future lead will want a seat",
+        why: `You currently have ${vcSeats} VC seat${vcSeats > 1 ? "s" : ""}. Reality check: a "seat cap forever" clause doesn't hold — every new round renegotiates the SHA, and a Series B lead simply won't sign without their seat. What you CAN control is the trajectory: keep non-lead investors to observers, and grow the board on your side as it grows on theirs.`,
         nextStep: isUS
-          ? "Insist on this IRA / SHA clause before the next term sheet is signed: 'All Investor Directors combined shall not exceed two (2) seats at any time, regardless of future financing rounds.' Delaware courts will enforce it."
-          : "Insist on this SHA clause: 'All investor directors combined shall not exceed two (2) seats at any time, regardless of future financings.' Have your lawyer add it to the SHA as a condition to closing.",
-        leverage: "Offer a broader information rights package (quarterly updates, board observer access) in exchange for the seat cap.",
+          ? "Practical playbook: (1) lead investors get one seat, co-investors get observer status only — this IS winnable; (2) when a new investor seat is added, add an independent or founder seat in the same amendment so the ratio holds (2-1-1 → 2-2-2 with an independent you helped pick); (3) founders nominate or co-approve the independent."
+          : "Practical playbook: (1) leads get one seat, co-investors observers only — this is winnable in India; (2) each time an investor seat is added, expand the board so founder + independent seats keep pace; (3) put founders' right to nominate the independent in the SHA now, while investors want the deal.",
+        leverage: "Offer a broader information rights package (quarterly updates, board observer access) to keep co-investors out of voting seats.",
       });
     }
 
@@ -711,8 +717,8 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         action: "Strike participating preferred from every round — negotiate non-participating 1×",
         why: `At a ${fmtM(state.exitValue)} exit, participating preferred costs founders ${fmtM(lostM)} compared to non-participating — VCs get their capital back AND share the upside. This is the single most value-destructive term after board control.`,
         nextStep: isUS
-          ? "Counter every term sheet with: 'Non-participating preferred, 1× liquidation preference.' Cite NVCA Model Documents — participating preferred is rare post-2015 in US institutional rounds. Walk away from any deal that won't move off participating."
-          : "Cite the India market standard: non-participating at Seed, Series A, and beyond. Add to your SHA: 'Preference shares shall be non-participating. Investors elect either preference OR pro-rata common — not both.'",
+          ? "Counter with: 'Non-participating preferred, 1× liquidation preference,' citing NVCA Model Documents — participating is rare post-2015 in US institutional rounds, so most funds concede when asked once. If they hold firm and it's your only offer, push for a 2–3× participation cap as the fallback rather than walking — an uncapped participation is the real poison."
+          : "Cite the India market standard: non-participating at Seed, Series A, and beyond. Add to your SHA: 'Preference shares shall be non-participating. Investors elect either preference OR pro-rata common — not both.' Fallback if they won't move and you lack alternatives: a 2× participation cap converts the worst version into a tolerable one.",
         leverage: `${fmtM(lostM)} is a concrete number to put in front of a VC — show them the exit waterfall. Most reasonable investors will concede once they see the founder outcome.`,
       });
     }
@@ -726,8 +732,8 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         timing: "next-round",
         action: `Push back on 2× liquidation preference in ${aggressiveRounds.join(", ")}`,
         why: `A 2× preference means investors get double their money back before founders see anything. If your exit is smaller than expected, founders walk away with nothing while VCs are made whole twice over. 1× non-participating is the global market standard.`,
-        nextStep: "Respond to the term sheet with: 'We'll accept 1× non-participating, standard market terms. We have another conversation ongoing and will move to whichever investor matches market.' Then actually run a competitive process — a single competing term sheet drops 2× to 1× in most cases.",
-        leverage: "Use Carta / Visible term sheet benchmarks to show 2× is an outlier — data wins this argument.",
+        nextStep: "Counter with: 'We'll accept 1× non-participating — standard market terms.' Do NOT bluff about competing offers you don't have; VCs talk to each other and a caught bluff ends the deal. If you genuinely have time, run a real process — an actual second term sheet drops 2× to 1× almost every time. If you don't, trade instead: a slightly lower valuation with a 1× clean preference usually beats a higher headline number with 2×.",
+        leverage: "Use Carta / Visible term sheet benchmarks to show 2× is an outlier — data wins this argument without theatrics.",
       });
     }
 
@@ -1536,14 +1542,16 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                 <div className="space-y-4">
                   <div className="text-xs bg-muted rounded-md px-3 py-2 text-muted-foreground">
                     Standard 4-year cliff-then-linear vesting. Elapsed months tracks how much has already vested.
-                    Single-trigger acceleration fully vests founders at acquisition.
+                    Acceleration controls what happens to unvested equity at acquisition.
                   </div>
 
                   <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                     <div>
-                      <div className="text-xs font-semibold">Single-trigger acceleration at exit</div>
+                      <div className="text-xs font-semibold">Acceleration at exit (single-trigger)</div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        All unvested equity vests immediately on acquisition. Market standard — always negotiate for it.
+                        All unvested equity vests on acquisition. Reality check: acquirers dislike this and VCs rarely grant it —
+                        the market standard is <b>double-trigger</b> (vests only if you're also terminated without cause post-acquisition).
+                        Ask for double-trigger as the floor; treat single-trigger as a stretch goal.
                       </div>
                     </div>
                     <Switch
@@ -1685,7 +1693,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
 
             {!!riskSignals.length && (
               <div className="mt-3 space-y-2">
-                {riskSignals.map((s, i) => {
+                {(showAllSignals ? riskSignals : riskSignals.slice(0, 3)).map((s, i) => {
                   const dotColor =
                     s.tone === "red"    ? "#ef4444"
                     : s.tone === "orange" ? "#f97316"
@@ -1700,6 +1708,15 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                     </div>
                   );
                 })}
+                {riskSignals.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllSignals((s) => !s)}
+                    className="text-xs font-semibold text-white/60 hover:text-white transition-colors"
+                  >
+                    {showAllSignals ? "▾ Show less" : `▸ ${riskSignals.length - 3} more signals`}
+                  </button>
+                )}
               </div>
             )}
           </Card>
@@ -2082,26 +2099,31 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                             <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
                             <div className="flex-1 h-px bg-border" />
                           </div>
-                          <div className="space-y-3">
+                          {/* Collapsed by default: title + priority only. Detail on demand. */}
+                          <Accordion type="single" collapsible className="space-y-2">
                             {group.map((r, idx) => (
-                              <div key={idx} className={cn("rounded-xl border p-3.5 space-y-2.5", borderColor, bgColor)}>
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="font-bold text-sm leading-snug flex-1">{r.action}</div>
-                                  {priorityBadge(r.priority)}
-                                </div>
-                                <div className="text-xs text-foreground/80 leading-relaxed">{r.why}</div>
-                                <div className={cn("rounded-lg p-2.5 border", key === "now" ? "bg-white/70 border-red-200 dark:bg-black/20 dark:border-red-800" : key === "next-round" ? "bg-white/70 border-amber-200 dark:bg-black/20 dark:border-amber-800" : "bg-white/70 border-blue-200 dark:bg-black/20 dark:border-blue-800")}>
-                                  <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1">→ Next Step</div>
-                                  <div className="text-xs leading-relaxed">{r.nextStep}</div>
-                                </div>
-                                {r.leverage && (
-                                  <div className="text-xs text-muted-foreground italic leading-relaxed">
-                                    💡 <span className="font-semibold">Leverage: </span>{r.leverage}
+                              <AccordionItem key={idx} value={`${key}-${idx}`} className={cn("rounded-xl border px-3.5", borderColor, bgColor)}>
+                                <AccordionTrigger className="hover:no-underline py-3">
+                                  <div className="flex items-center justify-between gap-2 w-full pr-2">
+                                    <span className="font-bold text-sm leading-snug text-left flex-1">{r.action}</span>
+                                    {priorityBadge(r.priority)}
                                   </div>
-                                )}
-                              </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="pb-3.5 space-y-2.5">
+                                  <div className="text-xs text-foreground/80 leading-relaxed">{r.why}</div>
+                                  <div className={cn("rounded-lg p-2.5 border", key === "now" ? "bg-white/70 border-red-200 dark:bg-black/20 dark:border-red-800" : key === "next-round" ? "bg-white/70 border-amber-200 dark:bg-black/20 dark:border-amber-800" : "bg-white/70 border-blue-200 dark:bg-black/20 dark:border-blue-800")}>
+                                    <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1">→ Next Step</div>
+                                    <div className="text-xs leading-relaxed">{r.nextStep}</div>
+                                  </div>
+                                  {r.leverage && (
+                                    <div className="text-xs text-muted-foreground italic leading-relaxed">
+                                      💡 <span className="font-semibold">Leverage: </span>{r.leverage}
+                                    </div>
+                                  )}
+                                </AccordionContent>
+                              </AccordionItem>
                             ))}
-                          </div>
+                          </Accordion>
                         </div>
                       );
                     })}
@@ -2887,6 +2909,15 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
           </Card>
           )}
 
+          <button
+            type="button"
+            onClick={() => setShowThresholds((s) => !s)}
+            className="w-full rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-left text-xs font-semibold hover:bg-muted transition-colors"
+          >
+            {showThresholds ? "▾ Hide" : "▸ Show"} the ownership thresholds — what changes at 75% / 51% / 26%
+          </button>
+
+          {showThresholds && (
           <Card className="p-4">
             <div className="font-semibold text-sm mb-1 text-foreground">Key Ownership Thresholds</div>
             <div className="text-xs text-muted-foreground mb-4">Tap any threshold to see exactly what powers change hands when it is crossed.</div>
@@ -3025,10 +3056,20 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
               );
             })()}
           </Card>
+          )}
         </TabsContent>
 
         {/* ── PROTECT ── */}
         <TabsContent value="negotiate" className="space-y-3 mt-4 border-t border-border pt-6">
+          <button
+            type="button"
+            onClick={() => setShowProtectDetail((s) => !s)}
+            className="w-full rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-left text-xs font-semibold hover:bg-muted transition-colors"
+          >
+            {showProtectDetail ? "▾ Hide" : "▸ Show"} the control deep-dive — danger zones chart & round-by-round founder equity
+          </button>
+
+          {showProtectDetail && (<>
           <Card className="p-4">
             <div className="font-semibold text-sm mb-3 text-foreground">Founder Control vs. Danger Zones</div>
             <div className="h-64">
@@ -3122,6 +3163,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
               );
             })()}
           </Card>
+          </>)}
         </TabsContent>
 
         {/* ── COMPARE ── */}
