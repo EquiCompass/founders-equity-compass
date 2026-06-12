@@ -2460,12 +2460,17 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                       {label}
                     </button>
                   ))}
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="w-full text-[11px] text-muted-foreground">
                     → ask budget: <b>{negBattleData.budget}</b>
                     {negBattleData.totalAsks > 0
                       ? ` · using ${negBattleData.asks.length} of ${negBattleData.totalAsks} possible asks`
                       : negBattleData.blockers.length > 0 ? "" : " · nothing worth asking — these terms are clean"}
-                    {" "}· startup lawyers call this the "Rule of 3": pick your battles, win them, close
+                    {" "}·{" "}
+                    {negLeverage === "competing"
+                      ? "with competing offers you can press every ask — and price. This is the only position where valuation moves."
+                      : negLeverage === "tight"
+                        ? "with short runway, a closed round beats a perfect round — make your one ask once, then sign."
+                        : 'startup lawyers call this the "Rule of 3": pick your battles, win them, close.'}
                   </span>
                 </div>
 
