@@ -341,8 +341,8 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
         tier: "ask",
         title: `Remove "participating" (${participatingRoundNames})`,
         detail: usMode
-          ? "Non-participating is the NVCA-model default — most US funds conform without argument."
-          : 'Non-participating is the India market standard at every stage. Proposed language: "Investors elect preference OR pro-rata — not both."',
+          ? "Non-participating is the NVCA-model default — most US funds conform when asked. The deeper argument: terms set now become the template for every later round, so participating stacked above this investor in B and C eats their own return too. Use that."
+          : 'Non-participating is the India market standard at every stage. Proposed language: "Investors elect preference OR pro-rata — not both." The deeper argument: this round\'s terms become the template for later rounds — participating stacked above this investor in B and C hurts their own return too.',
         cost: founderTakeUnder({ prefType: "non" }) - currentTake,
         concede: "VCs usually concede this", concedeTone: "good",
       });
@@ -2465,6 +2465,7 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                     {negBattleData.totalAsks > 0
                       ? ` · using ${negBattleData.asks.length} of ${negBattleData.totalAsks} possible asks`
                       : negBattleData.blockers.length > 0 ? "" : " · nothing worth asking — these terms are clean"}
+                    {" "}· startup lawyers call this the "Rule of 3": pick your battles, win them, close
                   </span>
                 </div>
 
@@ -2506,6 +2507,10 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                       {negBattleData.accepts.map((t) => (
                         <li key={t} className="text-xs text-muted-foreground">{t}</li>
                       ))}
+                      <li className="text-xs text-muted-foreground">
+                        Standard boilerplate — ROFR, tag-along/co-sale, registration rights, information rights, non-accruing dividends —
+                        is customary in every deal; negotiating it reads as inexperience. Only verify the exclusivity/no-shop period: 30–45 days, no longer.
+                      </li>
                     </ul>
                     {negBattleData.parked.length > 0 && (
                       <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
@@ -2544,9 +2549,9 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
                   title: "New equity issuance approval",
                   active: state.rounds.seed.enabled,
                   market: "both",
-                  demand: "Approval required for any new share issuance — including to advisors, employees, or in bridge rounds.",
-                  push: "Carve out: (1) ESOP grants within board-approved plan, (2) advisor grants below the pre-agreed threshold, (3) exercises of existing options. Only new round-level issuances should require VC approval.",
-                  clause: "Deemed approved if VC does not respond in writing within 10 business days of written notice.",
+                  demand: "Approval required for any new share issuance — including to advisors, employees, or in bridge rounds. Often paired with a block on issuing senior or pari-passu securities.",
+                  push: "Don't try to remove this wholesale — investors protecting their terms is the basic covenant of the deal, and taking offense reads as naive. Narrow it instead: (1) ESOP grants within board-approved plan carved out, (2) advisor grants below a pre-agreed threshold carved out, (3) exercises of existing options carved out, and (4) most importantly, drop any blanket block on senior/pari-passu issuances — otherwise this investor holds veto power over your ability to raise the next round at all.",
+                  clause: "Deemed approved if VC does not respond in writing within 10 business days of written notice. Consent rights limited to amendments that adversely affect this series differently from other preferred.",
                 },
                 {
                   key: "exec", group: "board",
@@ -3140,8 +3145,8 @@ export function Simulator({ state, onChange, readOnly = false }: Props) {
             <div className="font-semibold text-sm mb-3 text-foreground">Structural Protections Checklist</div>
             {(() => {
               const items = [
-                { title: "Dual-class structure in AoA", note: "DO BEFORE SEED", tone: "red", detail: "AoA amendments need 75% approval — hard for VCs to strip." },
-                { title: "Accelerated vesting for founders", note: "NEGOTIATE HARD", tone: "orange", detail: "25% vests immediately on VC close, remaining 75% over 3 years." },
+                { title: "Founders nominate the independent director", note: "PUT IN SHA NOW", tone: "red", detail: "The independent decides every tied board vote. Nomination rights are winnable while investors want the deal — nearly impossible to add later." },
+                { title: "Vesting credit + double-trigger acceleration", note: "NEGOTIATE", tone: "orange", detail: "When VCs impose founder re-vesting, ask for credit for months already served and double-trigger acceleration (vest on acquisition + termination). Both are standard asks; full single-trigger is not." },
                 { title: "Mutual ROFR among founders", note: "MUST HAVE", tone: "red", detail: "Any founder selling must first offer shares to co-founders at same price." },
               ] as const;
               const badgeCls = (tone: (typeof items)[number]["tone"]) =>

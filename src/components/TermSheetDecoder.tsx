@@ -222,10 +222,10 @@ export function TermSheetDecoder() {
       tier: "ask", concede: "high",
       cost: youUnder({ pref: mult === 2 ? "2x-non" : "1x-non" }) - youBase,
       title: 'Ask to remove "participating"',
-      body: `At a ${fmtM(exitVal)} exit this costs you personally the amount shown. Non-participating is the market norm at every stage in both markets.`,
+      body: `At a ${fmtM(exitVal)} exit this costs you personally the amount shown — and the real damage is precedent: whatever this round gets, every later round will demand. A "small" participating preferred today becomes participating across your whole preference stack by Series C.`,
       ask: a.mkt === "india"
-        ? 'Proposed language: "Investors elect preference OR pro-rata — not both." Frame it as conforming to India market standard, not as a concession.'
-        : "Frame it as conforming to the NVCA model documents — most US funds accept without argument.",
+        ? 'Proposed language: "Investors elect preference OR pro-rata — not both." Two framings that work: it conforms to India market standard, and it protects THIS investor too — terms set now carry into future rounds, where participating stacked above them hurts their own return.'
+        : "Frame it two ways: it conforms to the NVCA model documents, and it protects this investor too — terms set now become the template for later rounds, where participating stacked above them eats their own return.",
     });
   } else if (mult === 1 && a.pref !== "unsure") {
     accepts.push({ title: "1x non-participating preference", note: "Exactly what you want. Accept as drafted." });
@@ -352,7 +352,8 @@ PRIVATE NOTES — do not send
 • Post-round: founders ${fdrPct.toFixed(1)}% | investor ${vcPct.toFixed(1)}% | you personally ${youPct.toFixed(1)}%
 • Your take-home at a ${fmtM(exitVal)} exit under current terms: ${fmtM(youBase)}
 • Concede odds: ${[...blockers, ...asks].map((f) => `${f.title.split(" — ")[0].replace(/^Ask to /, "")} → ${CONCEDE_LABEL[f.concede].toLowerCase()}`).join("; ") || "n/a"}
-${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f) => f.title.replace(/^Ask to /, "")).join("; ")}\n` : ""}${confirms.length > 0 ? `• Confirm with lawyer: ${confirms.map((f) => f.title.replace("Confirm the ", "")).join("; ")}\n` : ""}• Rule: one email, all asks at once, collaborative tone. Never drip-feed redlines.`;
+${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f) => f.title.replace(/^Ask to /, "")).join("; ")}\n` : ""}${confirms.length > 0 ? `• Confirm with lawyer: ${confirms.map((f) => f.title.replace("Confirm the ", "")).join("; ")}\n` : ""}• Check the no-shop/exclusivity clause: 30–45 days is standard; longer locks you out of the market — ask to shorten before signing
+• Rule: one email, all asks at once, collaborative tone. Never drip-feed redlines.`;
   }, [blockers, asks, parked, confirms, a.round, exitVal, fdrPct, vcPct, youPct, youBase]);
 
   /* ─────────────── render: intake ─────────────── */
@@ -392,11 +393,11 @@ ${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f)
               <div className="grid grid-cols-2 gap-4">
                 <label className="text-xs text-muted-foreground">
                   Pre-money valuation ($M)
-                  <Input type="number" className="mt-1.5" value={a.pre} step={0.5} onChange={(e) => set("pre", +e.target.value || 0)} />
+                  <Input type="number" className="mt-1.5" value={a.pre || ""} placeholder="e.g. 18" step={0.5} onChange={(e) => set("pre", +e.target.value || 0)} />
                 </label>
                 <label className="text-xs text-muted-foreground">
                   They're investing ($M)
-                  <Input type="number" className="mt-1.5" value={a.inv} step={0.25} onChange={(e) => set("inv", +e.target.value || 0)} />
+                  <Input type="number" className="mt-1.5" value={a.inv || ""} placeholder="e.g. 6" step={0.25} onChange={(e) => set("inv", +e.target.value || 0)} />
                 </label>
               </div>
             </>
@@ -481,11 +482,11 @@ ${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f)
               <div className="grid grid-cols-3 gap-4">
                 <label className="text-xs text-muted-foreground">
                   All founders together (%)
-                  <Input type="number" className="mt-1.5" value={a.fdr} onChange={(e) => set("fdr", +e.target.value || 0)} />
+                  <Input type="number" className="mt-1.5" value={a.fdr || ""} placeholder="e.g. 85" onChange={(e) => set("fdr", +e.target.value || 0)} />
                 </label>
                 <label className="text-xs text-muted-foreground">
                   ESOP pool (%)
-                  <Input type="number" className="mt-1.5" value={a.esopNow} onChange={(e) => set("esopNow", +e.target.value || 0)} />
+                  <Input type="number" className="mt-1.5" value={a.esopNow || ""} placeholder="e.g. 10" onChange={(e) => set("esopNow", +e.target.value || 0)} />
                 </label>
                 <label className="text-xs text-muted-foreground">
                   Angels / others (%)
@@ -499,7 +500,7 @@ ${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f)
               </p>
               <label className="mt-4 block text-xs text-muted-foreground">
                 Out of the founders' {a.fdr}%, how much is <b>yours personally</b>?
-                <Input type="number" className="mt-1.5 max-w-[200px]" value={a.you} onChange={(e) => set("you", +e.target.value || 0)} />
+                <Input type="number" className="mt-1.5 max-w-[200px]" value={a.you || ""} placeholder="e.g. 45" onChange={(e) => set("you", +e.target.value || 0)} />
               </label>
               {a.you > a.fdr && <p className="mt-1.5 text-xs text-danger">Your personal stake can't exceed the founders' total of {a.fdr}%.</p>}
             </>
@@ -512,7 +513,7 @@ ${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f)
           </Button>
           <Button
             onClick={() => (step === 7 ? capOk && setDone(true) : setStep((s) => s + 1))}
-            disabled={step === 7 && !capOk}
+            disabled={(step === 7 && !capOk) || (step === 1 && (a.pre <= 0 || a.inv <= 0))}
           >
             {step === 7 ? "Decode my term sheet →" : "Next →"}
           </Button>
@@ -625,6 +626,11 @@ ${parked.length > 0 ? `• Parked (not worth a chip right now): ${parked.map((f)
                 <span className="font-medium text-foreground">{it.title}.</span> {it.note}
               </li>
             ))}
+            <li className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Standard boilerplate.</span> ROFR, tag-along/co-sale, registration rights,
+              information rights, non-accruing dividends — customary in every deal; negotiating them reads as inexperience. One exception
+              to verify: the exclusivity/no-shop period (usually the only binding clause in the term sheet) should be 30–45 days, not longer.
+            </li>
           </ul>
           {parked.length > 0 && (
             <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
